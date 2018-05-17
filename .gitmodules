@@ -1,0 +1,3 @@
+[submodule "cuda-ssl"]
+	path = cuda-ssl
+	url = git@github.com:ajd394/cuda-ssl.git
