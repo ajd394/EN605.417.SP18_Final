@@ -379,11 +379,10 @@ int main(int argc, char ** argv)
     int word_counter = 0;
     int char_counter = 0;
 
-    words.indicies[word_counter] = 0;
-
     while (word_file >> word && char_counter < MAX_CHARS)
     {
-        words.indicies[++word_counter] = char_counter;
+        //printf("Word # %d:  %s\n", word_counter, word);
+        words.indicies[word_counter++] = char_counter;
 
         memcpy(&words.characters[char_counter], word.c_str(), word.length() * sizeof(char) );
 
@@ -391,10 +390,12 @@ int main(int argc, char ** argv)
     }
     printf("Number of words proccsed for kernal execution:  %d\n", word_counter);
 
-    int i = 7;
+    int i = 0;
+    size_t len1 = (words.indicies[i+1]-words.indicies[i] + 1) * sizeof(char);
+    size_t len = (words.indicies[i+1]-words.indicies[i]) * sizeof(char);
     char * buffer;
-    buffer = (char*) malloc (i+1);
-    strncpy(buffer, &words.characters[words.indicies[i]], words.indicies[i+1]-words.indicies[i] * sizeof(char) );
+    buffer = (char*) malloc (len1);
+        strncpy(buffer, &words.characters[words.indicies[i]], len);
 
     printf("Word # %d:  %s\n", i, buffer);
     std::string pw_hash;
@@ -419,7 +420,7 @@ int main(int argc, char ** argv)
 
 	cudaMemcpyToSymbol(d_target_hash, h_target_hash, HASH_LEN_CHAR * sizeof(unsigned char));
 
-	dim3 dimBlock( blocksize, 1 );
+	dim3 dimBlock( word_counter, 1 );
 	dim3 dimGrid( 1, 1 );
     batch_hash_check<<<dimGrid, dimBlock>>>(words_d);
 

@@ -4,7 +4,7 @@ CUDA_PATH?=/usr/local/cuda
 INCLUDES = -I$(CUDA_PATH)/include -I./cuda-ssl/include/
 LIB_PATH = $(CUDA_PATH)/lib
 HOST_COMPILER ?= g++
-NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
+NVCC          := $(CUDA_PATH)/bin/nvcc -std=c++11 -ccbin $(HOST_COMPILER)
 CFLAGS = -I$(INCLUDE_PATH) -L$(LIB_PATH) -lcudart
 
 
