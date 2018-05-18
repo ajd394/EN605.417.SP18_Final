@@ -340,6 +340,15 @@ static Arguments parse_arguments(const int argc, char ** argv){
     return args;
 }
 
+char * get_word(Wordlist * words, int i) {
+    size_t len1 = (words->indicies[i+1]-words->indicies[i] + 1) * sizeof(char);
+    size_t len = (words->indicies[i+1]-words->indicies[i]) * sizeof(char);
+    char * ith_word;
+    ith_word = (char*) malloc (len1);
+    strncpy(ith_word, &words->characters[words->indicies[i]], len);
+    return  ith_word;
+}
+
 // The folowing two functions were retrevied from the link below
 // https://stackoverflow.com/questions/17261798/converting-a-hex-string-to-a-byte-array
 int char2int(char input)
@@ -363,17 +372,12 @@ void hex2bin(const char* src, unsigned char* target)
     src += 2;
   }
 }
- 
-int main(int argc, char ** argv)
-{
-	Arguments args = parse_arguments(argc, argv);
-	
-	std::ifstream word_file(args.word_list);
-    std::ifstream hash_file(args.hash_list);
 
+void process_hash(Arguments args)
+{
+    std::ifstream word_file(args.word_list);
     assert(word_file.is_open());
-    assert(hash_file.is_open());
-    
+
     std::string word;
     Wordlist words;
     int word_counter = 0;
@@ -389,45 +393,47 @@ int main(int argc, char ** argv)
         char_counter += word.length();
     }
     printf("Number of words proccsed for kernal execution:  %d\n", word_counter);
-
-    int i = 0;
-    size_t len1 = (words.indicies[i+1]-words.indicies[i] + 1) * sizeof(char);
-    size_t len = (words.indicies[i+1]-words.indicies[i]) * sizeof(char);
-    char * buffer;
-    buffer = (char*) malloc (len1);
-        strncpy(buffer, &words.characters[words.indicies[i]], len);
-
-    printf("Word # %d:  %s\n", i, buffer);
-    std::string pw_hash;
-    hash_file >> pw_hash;
-    hex2bin(pw_hash.c_str(),h_target_hash);
-	// while (hash_file >> pw_hash)
-	// {
-    //     printf("Craking hash:  %s\n", pw_hash.c_str());
-        
-	// }
-    
-    printf("Craking hash:  %s\n", pw_hash.c_str());
-
-	//int *bd;
-	//int b[N];
-    //const int isize = N*sizeof(int);
     
     Wordlist *words_d;
  
 	cudaMalloc( (void**)&words_d, sizeof(Wordlist) ); 
 	cudaMemcpy( words_d, &words, sizeof(Wordlist), cudaMemcpyHostToDevice );
 
-	cudaMemcpyToSymbol(d_target_hash, h_target_hash, HASH_LEN_CHAR * sizeof(unsigned char));
-
-	dim3 dimBlock( word_counter, 1 );
+	dim3 dimBlock( (word_counter % 2s) + 2 , 1 );
 	dim3 dimGrid( 1, 1 );
     batch_hash_check<<<dimGrid, dimBlock>>>(words_d);
 
     int results[MAX_CHARS];
     cudaMemcpy(results, words_d->results, MAX_CHARS * sizeof (int), cudaMemcpyDeviceToHost ); 
-    // cudaFree( bd );
+    cudaFree( words_d );
+
+    for(int i=0; i < word_counter; i++){
+        if (results[i] == 1 ){
+            char * buffer;
+            buffer = get_word(&words,i);
+            printf("Match found! The password is:  %s\n", buffer);
+            free(buffer);
+        }
+    }
+}
+ 
+int main(int argc, char ** argv)
+{
+	Arguments args = parse_arguments(argc, argv);
 	
-	printf("%d\n", results[0]);
+    std::ifstream hash_file(args.hash_list);
+
+    assert(hash_file.is_open());
+    
+    std::string pw_hash;
+    
+	while (hash_file >> pw_hash)
+	{
+        printf("Craking hash:  %s\n", pw_hash.c_str());
+        hex2bin(pw_hash.c_str(),h_target_hash);
+        cudaMemcpyToSymbol(d_target_hash, h_target_hash, HASH_LEN_CHAR * sizeof(unsigned char));
+        process_hash(args);
+	}    
+    
 	return EXIT_SUCCESS;
 }
