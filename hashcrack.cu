@@ -15,8 +15,6 @@ Assignment: Final Project
 #include <cudassl/md5.h>
 
 #define HASH_LEN_CHAR 16
-#define N 16
-#define blocksize 16
 
 #define MAX_CHARS 100000
 
@@ -33,8 +31,10 @@ typedef struct {
     std::string word_list;
 } Arguments;
 
+//__constant__ int * d_word_counter;
 __constant__ unsigned char d_target_hash[HASH_LEN_CHAR];
 static unsigned char h_target_hash[HASH_LEN_CHAR] = {0xC3, 0xFC, 0xD3, 0xD7, 0x61, 0x92, 0xE4, 0x00, 0x7D, 0xFB, 0x49, 0x6C, 0xCA, 0x67, 0xE1, 0x3B};
+
 
 __device__ void md5_init(md5_context *ctx)
 {
@@ -297,12 +297,13 @@ int check_md5_match(const unsigned char * word, size_t * len, unsigned char * ta
 }
  
 __global__ 
-void batch_hash_check(Wordlist * words) 
+void batch_hash_check(Wordlist * words, int * word_counter) 
 {
     int threadId = threadIdx.x + blockIdx.x * blockDim.x ;
-    //const unsigned char * test = "abcdefghijklmnopqrstuvwxyz";
-    size_t len = words->indicies[threadId+1] - words->indicies[threadId] * sizeof(char);
-	words->results[threadIdx.x] = check_md5_match((const unsigned char *) &words->characters[words->indicies[threadId]], &len, d_target_hash);
+    if (threadId < *word_counter-1){
+        size_t len = words->indicies[threadId+1] - words->indicies[threadId] * sizeof(char);
+        words->results[threadIdx.x] = check_md5_match((const unsigned char *) &words->characters[words->indicies[threadId]], &len, d_target_hash);
+    }
 }
 
 static void usage(){    
@@ -392,16 +393,38 @@ void process_hash(Arguments args)
 
         char_counter += word.length();
     }
+    int * d_word_counter;
+
+    cudaMalloc((void**) &d_word_counter, sizeof(int));
+    cudaMemcpy(d_word_counter, &word_counter, sizeof(int), cudaMemcpyHostToDevice);
+
     printf("Number of words proccsed for kernal execution:  %d\n", word_counter);
-    
+    //words.count = word_counter;
     Wordlist *words_d;
  
 	cudaMalloc( (void**)&words_d, sizeof(Wordlist) ); 
 	cudaMemcpy( words_d, &words, sizeof(Wordlist), cudaMemcpyHostToDevice );
+    
+    int blockSize;   // The launch configurator returned block size 
+    int minGridSize; // The minimum grid size needed to achieve the 
+                     // maximum occupancy for a full device launch 
+    int gridSize;    // The actual grid size needed, based on input size 
+  
+    cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSize, 
+                                        batch_hash_check, 0, 0); 
+    // Round up according to array size 
+    gridSize = (word_counter + blockSize - 1) / blockSize; 
+    
+    //printf("G B:  %d %d\n", gridSize, blockSize);
+    batch_hash_check<<<gridSize, blockSize>>>(words_d, d_word_counter);
 
-	dim3 dimBlock( (word_counter % 2) + 2 , 1 );
-	dim3 dimGrid( 1, 1 );
-    batch_hash_check<<<dimGrid, dimBlock>>>(words_d);
+    cudaDeviceSynchronize();
+
+    cudaError_t e=cudaGetLastError();
+    if(e!=cudaSuccess) {
+        printf("Cuda failure %s:%d: '%s'\n",__FILE__,__LINE__,cudaGetErrorString(e));
+        exit(0);
+    }
 
     int results[MAX_CHARS];
     cudaMemcpy(results, words_d->results, MAX_CHARS * sizeof (int), cudaMemcpyDeviceToHost ); 
@@ -411,7 +434,7 @@ void process_hash(Arguments args)
         if (results[i] == 1 ){
             char * buffer;
             buffer = get_word(&words,i);
-            printf("Match found! The password is:  %s\n", buffer);
+            printf("Match found! The password is:  %s , Length %zu\n", buffer, strlen(buffer));
             free(buffer);
         }
     }
@@ -426,14 +449,27 @@ int main(int argc, char ** argv)
     assert(hash_file.is_open());
     
     std::string pw_hash;
+
+    // create events for timing
+    cudaEvent_t startEvent, stopEvent; 
+    cudaEventCreate(&startEvent);
+    cudaEventCreate(&stopEvent);
+    float time;
+
+    cudaEventRecord(startEvent, 0);
     
 	while (hash_file >> pw_hash)
 	{
-        printf("Craking hash:  %s\n", pw_hash.c_str());
+        printf("\nCraking hash:  %s\n", pw_hash.c_str());
         hex2bin(pw_hash.c_str(),h_target_hash);
         cudaMemcpyToSymbol(d_target_hash, h_target_hash, HASH_LEN_CHAR * sizeof(unsigned char));
         process_hash(args);
-	}    
+    }
+
+    cudaEventRecord(stopEvent, 0);
+    cudaEventSynchronize(stopEvent);
+    cudaEventElapsedTime(&time, startEvent, stopEvent);
+    printf("Cracking this hash took %f ms\n", time);
     
 	return EXIT_SUCCESS;
 }
