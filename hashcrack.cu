@@ -399,7 +399,7 @@ void process_hash(Arguments args)
 	cudaMalloc( (void**)&words_d, sizeof(Wordlist) ); 
 	cudaMemcpy( words_d, &words, sizeof(Wordlist), cudaMemcpyHostToDevice );
 
-	dim3 dimBlock( (word_counter % 2s) + 2 , 1 );
+	dim3 dimBlock( (word_counter % 2) + 2 , 1 );
 	dim3 dimGrid( 1, 1 );
     batch_hash_check<<<dimGrid, dimBlock>>>(words_d);
 
