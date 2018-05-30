@@ -302,7 +302,7 @@ void batch_hash_check(Wordlist * words, int * word_counter)
     int threadId = threadIdx.x + blockIdx.x * blockDim.x ;
     if (threadId < *word_counter-1){
         size_t len = words->indicies[threadId+1] - words->indicies[threadId] * sizeof(char);
-        words->results[threadIdx.x] = check_md5_match((const unsigned char *) &words->characters[words->indicies[threadId]], &len, d_target_hash);
+        words->results[threadId] = check_md5_match((const unsigned char *) &words->characters[words->indicies[threadId]], &len, d_target_hash);
     }
 }
 
@@ -456,20 +456,23 @@ int main(int argc, char ** argv)
     cudaEventCreate(&stopEvent);
     float time;
 
-    cudaEventRecord(startEvent, 0);
+    
     
 	while (hash_file >> pw_hash)
 	{
+        cudaEventRecord(startEvent, 0);
+
         printf("\nCraking hash:  %s\n", pw_hash.c_str());
         hex2bin(pw_hash.c_str(),h_target_hash);
         cudaMemcpyToSymbol(d_target_hash, h_target_hash, HASH_LEN_CHAR * sizeof(unsigned char));
         process_hash(args);
+
+        cudaEventRecord(stopEvent, 0);
+        cudaEventSynchronize(stopEvent);
+        cudaEventElapsedTime(&time, startEvent, stopEvent);
+        printf("Cracking this hash took %f ms\n", time);
     }
 
-    cudaEventRecord(stopEvent, 0);
-    cudaEventSynchronize(stopEvent);
-    cudaEventElapsedTime(&time, startEvent, stopEvent);
-    printf("Cracking this hash took %f ms\n", time);
-    
+   
 	return EXIT_SUCCESS;
 }
